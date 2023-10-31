@@ -3,9 +3,9 @@ import random
 from Crypto.Cipher import AES
 from Crypto.Util.Padding import pad, unpad
 from Crypto.Util import number
-from Crypto import *
+import base64
 import math
-from sympy import *
+
 import gmpy2
 
 
@@ -52,6 +52,7 @@ class Client_AES:
         """
         self.plain_text = plain_text
         return AES.new(self.aes_key, AES.MODE_CBC, self.aes_iv).encrypt(pad(plain_text, AES.block_size))
+
 
     def aes_decrypt(self, cipher_text):
         """

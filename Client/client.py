@@ -8,10 +8,14 @@ import ttkbootstrap as ttk
 from ttkbootstrap.scrolled import ScrolledText
 import threading
 from utils import *
+from tkinter import filedialog
+import os
 
 
 class LoginWindow:
     def __init__(self):
+        self.open_file_name = None
+        self.open_file_data = None
         self.aes_encrypt_text = ''
         self.rsa_e = None
         self.rsa_n = None
@@ -41,7 +45,7 @@ class LoginWindow:
 
     def draw_login_window(self):
         self.login_window = ttk.Window()
-        self.login_window.title('ChatRoom-Login')
+        self.login_window.title('ChatRoom-Login-Client')
 
         self.login_window.geometry("700x400")
         self.login_window.resizable(True, True)
@@ -135,6 +139,12 @@ class LoginWindow:
         self.btn_send = ttk.Button(self.chat_window, text='send', style='send.TButton')
         self.btn_send.bind("<Button-1>", self.send_msg)
         self.btn_send.pack(side=ttk.TOP, anchor='ne')
+
+        ttk.Style().configure(style='send.TButton', font=('Helvetica', 12), background='green', width=12)
+        self.btn_send = ttk.Button(self.chat_window, text='file', style='send.TButton')
+        self.btn_send.bind("<Button-1>", self.send_file)
+        self.btn_send.place(x=510, y=560)
+
         # btn_send.pack()
         self.Text_input = ScrolledText(self.chat_window, width=76, height=14, autohide=True)
         self.Text_input.pack(side=ttk.TOP, expand=ttk.YES, fill=ttk.BOTH)
@@ -175,7 +185,7 @@ class LoginWindow:
             return 'break'
         strMsg = "我:" + time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()) + '\n'
 
-        self.text_set(strMsg, input_, 'right', 'green')
+        self.text_set(strMsg, input_, 'right', '#18bc9c')
 
         self.Text_input.delete("0.0", ttk.END)
 
@@ -202,6 +212,21 @@ class LoginWindow:
 
         threading.Thread(target=self.recv_from_server).start()
 
+    def rsa_aes(self):
+        rsa_info = self.sk.recv(1024).decode('utf-8').strip().replace('\n', '').replace('\r', '').split(',')
+        rand_num = number.getPrime(512)
+
+        encrypt_rand_num = pow(rand_num, int(rsa_info[1]), int(rsa_info[0]))
+        aes_string = str(rand_num).encode('utf-8')
+        self.rsa_n = rsa_info[0]
+        self.rsa_e = rsa_info[1]
+
+        aes_key = aes_string[:16]
+        aes_iv = aes_string[-16:]
+        self.aes = Client_AES(aes_key, aes_iv)
+
+        self.sk.send(str(encrypt_rand_num).encode('utf-8'))
+
     def dh_swap(self):
         client_dh = Client_DH()
         key_info = '{},'.format(client_dh.rand_p) + '{},'.format(client_dh.rand_g) + '{}'.format(
@@ -212,30 +237,8 @@ class LoginWindow:
         oppo_public_key = self.sk.recv(1024).decode('utf-8')
         client_dh.calc_share_key(int(oppo_public_key))
 
-        # print('key_info:',key_info)
-        # print('client_public_key:',client_dh.self_public_key)
-        # print('server_public_key:',oppo_public_key)
         self.share_key = str(client_dh.share_key).encode()
         self.aes = Client_AES(self.share_key[:16], self.share_key[-16:])
-
-    def rsa_aes(self):
-        rsa_info = self.sk.recv(1024).decode('utf-8').strip().replace('\n', '').replace('\r', '').split(',')
-        rand_num = number.getPrime(512)
-
-        encrypt_rand_num = pow(rand_num, int(rsa_info[1]), int(rsa_info[0]))
-        aes_string = str(rand_num).encode('utf-8')
-        self.rsa_n = rsa_info[0]
-        self.rsa_e = rsa_info[1]
-        # print('rand_num',rand_num)
-        # print('encrypt:',encrypt_rand_num)
-        # print('e',rsa_info[1])
-        # print('n',rsa_info[0])
-        aes_key = aes_string[:16]
-        aes_iv = aes_string[-16:]
-        # print(aes_string)
-        self.aes = Client_AES(aes_key, aes_iv)
-
-        self.sk.send(str(encrypt_rand_num).encode('utf-8'))
 
     def recv_from_server(self):
         """
@@ -243,12 +246,44 @@ class LoginWindow:
         """
         while True:
             recv_info = self.sk.recv(1024)
-            recv_info = self.aes.aes_decrypt(recv_info).decode('utf-8').strip().replace('\n', '').replace('\r',
-                                                                                                          '') + '\n'
-            print('server{} say: '.format((self.IP, self.PORT)), recv_info)
+            if recv_info[:8] == b'#coffee#':
+                end_index = recv_info.index(b'#eeffoc#')
+
+                file_name = recv_info[8:end_index].decode('utf-8')
+
+                content = (self.aes.aes_decrypt(recv_info[end_index + 8:])
+                           .decode('utf-8').strip().replace('\n', '').replace('\r', '') + '\n')
+
+                self.recv_file(file_name=file_name, content=content)
+
+
+            else:
+                recv_info = self.aes.aes_decrypt(recv_info).decode('utf-8').strip().replace('\n', '').replace('\r',
+                                                                                                              '') + '\n'
+                print('server{} say: '.format((self.IP, self.PORT)), recv_info)
+                strMsg = "对方:" + time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()) + '\n'
+
+                self.text_set(strMsg, recv_info + '\n', 'left', 'pink')
+
+
+    def recv_file(self,file_name, content):
+        save_or_not = tk.messagebox.askyesno(title='文件',
+                                             message="对方向您传来一个文件\n{}\n是否保存".format(file_name))
+        if not save_or_not:
             strMsg = "对方:" + time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()) + '\n'
 
-            self.text_set(strMsg, recv_info + '\n', 'left', 'pink')
+            self.text_set(strMsg, '文件[' + file_name + ']-未保存' + '\n' + '\n', 'left',
+                          'red')
+            return
+
+        if save_or_not:
+            save_path = filedialog.asksaveasfilename()
+            with open(save_path, 'w') as f:
+                f.write(content)
+            strMsg = "对方:" + time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()) + '\n'
+
+            self.text_set(strMsg, '文件[' + file_name + ']-已保存' + '\n' + '\n', 'left',
+                          'green')
 
     def text_set(self, strMsg, input_, site, color):
         self.start = self.end
@@ -260,3 +295,42 @@ class LoginWindow:
         tn = 'justify{}'.format(random.randint(0, 99999))
         self.Text_history.tag_add(tn, self.start, self.end)
         self.Text_history.tag_configure(tn, justify=site, foreground=color)
+
+    def file_open(self):
+        self.open_file_name = filedialog.askopenfilename()
+        with open(file=self.open_file_name, mode='rb') as f:
+            self.open_file_data = f.read()
+
+    def send_file(self, event):
+        self.file_open()
+
+        index = self.open_file_name[::-1].index('/')
+        file_name = self.open_file_name[::-1][:index][::-1]
+
+        format_file_name = "".join("文件[" + file_name+']') +'\n'+'\n'
+
+        self.aes_encrypt_text = self.aes.aes_encrypt(self.open_file_data)
+
+        strMsg = "我:" + time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()) + '\n'
+
+
+        self.text_set(strMsg, format_file_name, 'right', '#e74c3c')
+
+        self.Text_input.delete("0.0", ttk.END)
+
+        self.Text_encrypt.delete("0.0", ttk.END)
+        self.Text_encrypt.insert('1.0', 'RSA\n')
+        self.Text_encrypt.insert('2.0', 'N:{}\n'.format(self.rsa_n))
+        self.Text_encrypt.insert('3.0', 'E:{}\n'.format(self.rsa_e))
+
+        self.Text_encrypt.insert('4.0', '\n' * 25)
+        self.Text_encrypt.insert('28.0', 'AES\n')
+        self.Text_encrypt.insert('29.0', 'PLAIN_TEXT:{}\n'.format(self.open_file_data))
+        self.Text_encrypt.insert('30.0', 'ENCRYPT_TEXT:{}\n'.format(self.aes_encrypt_text))
+
+        file_magic = b'#coffee#'+file_name.encode('utf-8')+b'#eeffoc#'
+
+        print(file_magic+self.aes_encrypt_text)
+        self.sk.send(file_magic+self.aes_encrypt_text)
+
+

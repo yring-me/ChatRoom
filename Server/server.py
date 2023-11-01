@@ -142,7 +142,8 @@ class LoginWindow:
         self.save_height = new_height
 
     def draw_chat_input(self):
-        ttk.Style().configure(style='send.TButton', font=('Helvetica', 12), bootstyle='info',foreground='pink', width=12)
+        ttk.Style().configure(style='send.TButton', font=('Helvetica', 12), bootstyle='info', foreground='pink',
+                              width=12)
         self.btn_send = ttk.Button(self.chat_window, text='send', style='send.TButton')
         self.btn_send.bind("<Button-1>", self.send_msg)
         self.btn_send.pack(side=ttk.TOP, anchor='ne')
@@ -215,16 +216,6 @@ class LoginWindow:
         self.client_socket.send(self.encrypt_input)
 
     def run(self):
-        # TODO:整一个临时等待链接窗
-        # self.wait_window = ttk.Window()
-        # self.chat_window.title('Connecting....')
-        # self.chat_window.geometry('100x80')
-        # self.wait_text = ttk.Text(self.wait_window)
-        # self.wait_text.insert("end","Connecting now,PLZ wait")
-        # self.wait_text.tag_add('temp', '1.0', ttk.END)
-        # self.wait_text.tag_configure('tmep', justify='center', foreground='blue')
-        # self.wait_window.mainloop()
-
         self.client_socket, self.client_addr = self.server.accept()
 
         swap_th = threading.Thread(target=self.rsa_aes)
@@ -276,10 +267,9 @@ class LoginWindow:
 
                 file_name = recv_info[8:end_index].decode('utf-8')
 
-                content = (self.aes.aes_decrypt(recv_info[end_index + 8:])
-                           .decode('utf-8').strip().replace('\n', '').replace('\r', '') + '\n')
+                length = int.from_bytes(recv_info[end_index + 8:], 'little', signed=False)
 
-                self.recv_file(file_name=file_name, content=content)
+                self.recv_file(file_name, length)
 
             elif recv_info[:10] == b'#deadbeef#':
                 end_index = recv_info.index(b'#beefdead#')
@@ -344,23 +334,36 @@ class LoginWindow:
         self.Text_history.see("end")
         self.image_index += 1
 
-    def recv_file(self, file_name, content):
+    def recv_file(self, file_name, length):
+        self.client_socket.send(b'#ok#')
+
+        data = b''
+        count = 0
+        while count < length:
+            data += self.client_socket.recv(1024)
+            count += 1024
+            if data.find(b'#filend#') > 0:
+                break
+
+        content = self.aes.aes_decrypt(data.replace(b'#filend#', b''))
+
         save_or_not = tk.messagebox.askyesno(title='文件',
                                              message="对方向您传来一个文件\n{}\n是否保存".format(file_name))
         if not save_or_not:
             strMsg = "对方:" + time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()) + '\n'
 
             self.text_set(strMsg, '文件[' + file_name + ']-未保存' + '\n' + '\n', 'left',
-                          'red')
+                          '#18bc9c')
+            self.text_set('', '文件[' + file_name + ']-已保存' + '\n' + '\n', 'left', 'red')
 
         if save_or_not:
             save_path = filedialog.asksaveasfilename()
-            with open(save_path, 'w') as f:
+            with open(save_path, 'wb') as f:
                 f.write(content)
             strMsg = "对方:" + time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()) + '\n'
 
-            self.text_set(strMsg, '文件[' + file_name + ']-已保存' + '\n' + '\n', 'left',
-                          'green')
+            self.text_set(strMsg, '', 'left', '#18bc9c')
+            self.text_set('', '文件[' + file_name + ']-已保存' + '\n' + '\n', 'left', 'green')
 
     def text_set(self, strMsg, input_, site, color):
         self.start = self.end
@@ -391,7 +394,7 @@ class LoginWindow:
 
         strMsg = "我:" + time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()) + '\n'
 
-        self.text_set(strMsg, format_file_name, 'right', '#e74c3c')
+        self.text_set(strMsg, format_file_name, 'right', '#18bc9c')
 
         self.Text_input.delete("0.0", ttk.END)
 
@@ -402,13 +405,21 @@ class LoginWindow:
 
         self.Text_encrypt.insert('4.0', '\n' * 25)
         self.Text_encrypt.insert('28.0', 'AES\n')
-        self.Text_encrypt.insert('29.0', 'PLAIN_TEXT:{}\n'.format(self.open_file_data))
-        self.Text_encrypt.insert('30.0', 'ENCRYPT_TEXT:{}\n'.format(self.aes_encrypt_text))
+        self.Text_encrypt.insert('29.0', 'PLAIN_TEXT:{}\n'.format(self.open_file_data[20:]))
+        self.Text_encrypt.insert('30.0', 'ENCRYPT_TEXT:{}\n'.format(self.aes_encrypt_text[20:]))
 
         file_magic = b'#coffee#' + file_name.encode('utf-8') + b'#eeffoc#'
 
-        # print(file_magic + self.aes_encrypt_text)
-        self.client_socket.send(file_magic + self.aes_encrypt_text)
+        length = len(self.aes_encrypt_text)
+
+        self.client_socket.send(file_magic + length.to_bytes(16, 'little', signed=False))
+
+        while 1:
+            if self.client_socket.recv(1024) == b'#ok#':
+                print('ok')
+                break
+
+        self.client_socket.sendall(self.aes_encrypt_text+b'#filend#')
 
     def send_image(self, event):
         self.file_open()
@@ -426,7 +437,7 @@ class LoginWindow:
         file_magic = b'#deadbeef#' + file_name.encode('utf-8') + b'#beefdead#'
 
         length = len(self.aes_encrypt_text)
-        self.client_socket.send(file_magic+length.to_bytes(16,'little',signed=False))
+        self.client_socket.send(file_magic + length.to_bytes(16, 'little', signed=False))
 
         while 1:
             if self.client_socket.recv(1024) == b'#ok#':
@@ -434,4 +445,4 @@ class LoginWindow:
                 break
 
         # print(self.aes_encrypt_text)
-        self.client_socket.sendall(self.aes_encrypt_text+b'#imagend#')
+        self.client_socket.sendall(self.aes_encrypt_text + b'#imagend#')

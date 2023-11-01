@@ -143,11 +143,9 @@ class LoginWindow:
         self.btn_send.bind("<Button-1>", self.send_msg)
         self.btn_send.pack(side=ttk.TOP, anchor='ne')
 
-
         self.btn_send = ttk.Button(self.chat_window, text='file', style='send.TButton')
         self.btn_send.bind("<Button-1>", self.send_file)
         self.btn_send.place(x=460, y=560)
-
 
         self.btn_send = ttk.Button(self.chat_window, text='image', style='send.TButton')
         self.btn_send.bind("<Button-1>", self.send_image)
@@ -231,10 +229,9 @@ class LoginWindow:
 
                 file_name = recv_info[8:end_index].decode('utf-8')
 
-                content = (self.aes.aes_decrypt(recv_info[end_index + 8:])
-                           .decode('utf-8').strip().replace('\n', '').replace('\r', '') + '\n')
+                length = int.from_bytes(recv_info[end_index + 8:], 'little', signed=False)
 
-                self.recv_file(file_name=file_name, content=content)
+                self.recv_file(file_name, length)
 
 
             elif recv_info[:10] == b'#deadbeef#':
@@ -253,24 +250,36 @@ class LoginWindow:
 
                 self.text_set(strMsg, recv_info + '\n', 'left', 'pink')
 
-    def recv_file(self, file_name, content):
+    def recv_file(self, file_name, length):
+        self.sk.send(b'#ok#')
+
+        data = b''
+        count = 0
+        while count < length:
+            data += self.sk.recv(1024)
+            count += 1024
+            if data.find(b'#filend#') > 0:
+                break
+
+        content = self.aes.aes_decrypt(data.replace(b'#filend#', b''))
+
         save_or_not = tk.messagebox.askyesno(title='文件',
                                              message="对方向您传来一个文件\n{}\n是否保存".format(file_name))
         if not save_or_not:
             strMsg = "对方:" + time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()) + '\n'
 
             self.text_set(strMsg, '文件[' + file_name + ']-未保存' + '\n' + '\n', 'left',
-                          'red')
-            return
+                          '#18bc9c')
+            self.text_set('', '文件[' + file_name + ']-已保存' + '\n' + '\n', 'left', 'red')
 
         if save_or_not:
             save_path = filedialog.asksaveasfilename()
-            with open(save_path, 'w') as f:
+            with open(save_path, 'wb') as f:
                 f.write(content)
             strMsg = "对方:" + time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()) + '\n'
 
-            self.text_set(strMsg, '文件[' + file_name + ']-已保存' + '\n' + '\n', 'left',
-                          'green')
+            self.text_set(strMsg, '', 'left', '#18bc9c')
+            self.text_set('', '文件[' + file_name + ']-已保存' + '\n' + '\n', 'left', 'green')
 
     def recv_image(self, file_name, length):
         print(file_name, length)
@@ -349,7 +358,7 @@ class LoginWindow:
 
         strMsg = "我:" + time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()) + '\n'
 
-        self.text_set(strMsg, format_file_name, 'right', '#e74c3c')
+        self.text_set(strMsg, format_file_name, 'right', '#18bc9c')
 
         self.Text_input.delete("0.0", ttk.END)
 
@@ -360,13 +369,21 @@ class LoginWindow:
 
         self.Text_encrypt.insert('4.0', '\n' * 25)
         self.Text_encrypt.insert('28.0', 'AES\n')
-        self.Text_encrypt.insert('29.0', 'PLAIN_TEXT:{}\n'.format(self.open_file_data))
-        self.Text_encrypt.insert('30.0', 'ENCRYPT_TEXT:{}\n'.format(self.aes_encrypt_text))
+        self.Text_encrypt.insert('29.0', 'PLAIN_TEXT:{}\n'.format(self.open_file_data[20:]))
+        self.Text_encrypt.insert('30.0', 'ENCRYPT_TEXT:{}\n'.format(self.aes_encrypt_text[20:]))
 
         file_magic = b'#coffee#' + file_name.encode('utf-8') + b'#eeffoc#'
 
-        print(file_magic + self.aes_encrypt_text)
-        self.sk.send(file_magic + self.aes_encrypt_text)
+        length = len(self.aes_encrypt_text)
+
+        self.sk.send(file_magic + length.to_bytes(16, 'little', signed=False))
+
+        while 1:
+            if self.sk.recv(1024) == b'#ok#':
+                print('ok')
+                break
+
+        self.sk.sendall(self.aes_encrypt_text+b'#filend#')
 
     def image_set(self, site):
         self.start = self.end
@@ -380,7 +397,7 @@ class LoginWindow:
         self.Text_history.image_create("end", image=self.image_list[self.image_index])
         self.Text_history.insert("end", "\n" * height)
 
-        after = int(self.Text_history.index('end').split('.')[0])-1
+        after = int(self.Text_history.index('end').split('.')[0]) - 1
 
         self.end = self.start + (after - before)
         tn = 'justify{}'.format(random.randint(0, 99999))
@@ -406,7 +423,7 @@ class LoginWindow:
         file_magic = b'#deadbeef#' + file_name.encode('utf-8') + b'#beefdead#'
 
         length = len(self.aes_encrypt_text)
-        self.sk.send(file_magic+length.to_bytes(16,'little',signed=False))
+        self.sk.send(file_magic + length.to_bytes(16, 'little', signed=False))
 
         while 1:
             if self.sk.recv(1024) == b'#ok#':
@@ -414,4 +431,4 @@ class LoginWindow:
                 break
 
         print(self.aes_encrypt_text)
-        self.sk.sendall(self.aes_encrypt_text+b'#imagend#')
+        self.sk.sendall(self.aes_encrypt_text + b'#imagend#')

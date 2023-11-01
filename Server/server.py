@@ -299,7 +299,7 @@ class LoginWindow:
                 self.text_set(strMsg, recv_info + '\n', 'left', 'pink')
 
     def recv_image(self, file_name, length):
-        print(file_name, length)
+        # print(file_name, length)
         self.client_socket.send(b'#ok#')
         data = b''
         count = 0
@@ -407,7 +407,7 @@ class LoginWindow:
 
         file_magic = b'#coffee#' + file_name.encode('utf-8') + b'#eeffoc#'
 
-        print(file_magic + self.aes_encrypt_text)
+        # print(file_magic + self.aes_encrypt_text)
         self.client_socket.send(file_magic + self.aes_encrypt_text)
 
     def send_image(self, event):
@@ -433,5 +433,5 @@ class LoginWindow:
                 print('ok')
                 break
 
-        print(self.aes_encrypt_text)
+        # print(self.aes_encrypt_text)
         self.client_socket.sendall(self.aes_encrypt_text+b'#imagend#')

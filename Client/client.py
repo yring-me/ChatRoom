@@ -2,7 +2,7 @@ import tkinter as tk
 import socket
 import time
 import tkinter.messagebox
-import random
+from PIL import Image, ImageTk
 
 import ttkbootstrap as ttk
 from ttkbootstrap.scrolled import ScrolledText
@@ -11,10 +11,12 @@ from utils import *
 from tkinter import filedialog
 import os
 
+image = 0
+
 
 class LoginWindow:
     def __init__(self):
-        self.open_file_name = None
+        self.full_file_path = None
         self.open_file_data = None
         self.aes_encrypt_text = ''
         self.rsa_e = None
@@ -37,14 +39,14 @@ class LoginWindow:
         self.login_window = None
         self.IP_var = None
         self.PORT_var = None
-        self.line = 0
         self.Text_history = None
-        self.chat_window_first_load = 0
         self.start = 1.0
         self.end = 1.0
+        self.image_list = []
+        self.image_index = 0
 
     def draw_login_window(self):
-        self.login_window = ttk.Window()
+        self.login_window = ttk.Window(themename='superhero')
         self.login_window.title('ChatRoom-Login-Client')
 
         self.login_window.geometry("700x400")
@@ -98,7 +100,7 @@ class LoginWindow:
         self.draw_chat_window()
 
     def draw_chat_window(self):
-        self.chat_window = ttk.Window(themename='darkly', resizable=(1000, 800))
+        self.chat_window = ttk.Toplevel()
         self.chat_window.title('ChatRoom-Client')
 
         self.chat_window.geometry('1000x800')
@@ -135,15 +137,21 @@ class LoginWindow:
         self.save_height = new_height
 
     def draw_chat_input(self):
-        ttk.Style().configure(style='send.TButton', font=('Helvetica', 12), background='yellow', width=12)
+        ttk.Style().configure(style='send.TButton', font=('Helvetica', 12), bootstyle='info', foreground='pink',
+                              width=12)
         self.btn_send = ttk.Button(self.chat_window, text='send', style='send.TButton')
         self.btn_send.bind("<Button-1>", self.send_msg)
         self.btn_send.pack(side=ttk.TOP, anchor='ne')
 
-        ttk.Style().configure(style='send.TButton', font=('Helvetica', 12), background='green', width=12)
+
         self.btn_send = ttk.Button(self.chat_window, text='file', style='send.TButton')
         self.btn_send.bind("<Button-1>", self.send_file)
-        self.btn_send.place(x=510, y=560)
+        self.btn_send.place(x=460, y=560)
+
+
+        self.btn_send = ttk.Button(self.chat_window, text='image', style='send.TButton')
+        self.btn_send.bind("<Button-1>", self.send_image)
+        self.btn_send.place(x=332, y=560)
 
         # btn_send.pack()
         self.Text_input = ScrolledText(self.chat_window, width=76, height=14, autohide=True)
@@ -162,7 +170,7 @@ class LoginWindow:
         self.Text_history.pack(side=ttk.TOP, expand=ttk.YES, fill=ttk.BOTH)
 
     def draw_chat_encrypt(self):
-        self.Text_encrypt = ScrolledText(self.chat_window, width=32, height=25, autohide=True)
+        self.Text_encrypt = ScrolledText(self.chat_window, width=32, height=25, autohide=True, wrap='word')
         self.Text_encrypt.pack(side=ttk.RIGHT, anchor='ne', expand=ttk.YES, fill=ttk.BOTH)
         self.Text_encrypt.insert('1.0', 'RSA\n')
         self.Text_encrypt.insert('2.0', 'N:\n')
@@ -177,35 +185,7 @@ class LoginWindow:
         # print(self.Text_input.get('0.0', ttk.END))
         return self.Text_input.get('0.0', ttk.END)
 
-    def send_msg(self, event):
-        input_ = self.get_input()
-        self.aes_encrypt_text = self.aes.aes_encrypt(input_.encode('utf-8'))
-        if input_[0] == '\n':
-            tk.messagebox.showwarning(message='Empty Message')
-            return 'break'
-        strMsg = "我:" + time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()) + '\n'
-
-        self.text_set(strMsg, input_, 'right', '#18bc9c')
-
-        self.Text_input.delete("0.0", ttk.END)
-
-        self.Text_encrypt.delete("0.0", ttk.END)
-        self.Text_encrypt.insert('1.0', 'RSA\n')
-        self.Text_encrypt.insert('2.0', 'N:{}\n'.format(self.rsa_n))
-        self.Text_encrypt.insert('3.0', 'E:{}\n'.format(self.rsa_e))
-
-        self.Text_encrypt.insert('4.0', '\n' * 25)
-        self.Text_encrypt.insert('28.0', 'AES\n')
-        self.Text_encrypt.insert('29.0', 'PLAIN_TEXT:{}\n'.format(input_))
-        self.Text_encrypt.insert('30.0', 'ENCRYPT_TEXT:{}\n'.format(self.aes_encrypt_text))
-
-        self.sk.send(self.aes_encrypt_text)
-
     def run(self):
-        # 与服务器建立连接
-        # 创建线程，负责获取键盘输入并发送给服务器
-        # threading.Thread(target=self.send_to_server).start()
-        # 创建线程，接收服务器信息
         t = threading.Thread(target=self.rsa_aes)
         t.start()
         t.join()
@@ -257,6 +237,14 @@ class LoginWindow:
                 self.recv_file(file_name=file_name, content=content)
 
 
+            elif recv_info[:10] == b'#deadbeef#':
+                end_index = recv_info.index(b'#beefdead#')
+
+                file_name = recv_info[10:end_index].decode('utf-8')
+
+                length = int.from_bytes(recv_info[end_index + 10:], 'little', signed=False)
+                self.recv_image(file_name, length)
+
             else:
                 recv_info = self.aes.aes_decrypt(recv_info).decode('utf-8').strip().replace('\n', '').replace('\r',
                                                                                                               '') + '\n'
@@ -265,8 +253,7 @@ class LoginWindow:
 
                 self.text_set(strMsg, recv_info + '\n', 'left', 'pink')
 
-
-    def recv_file(self,file_name, content):
+    def recv_file(self, file_name, content):
         save_or_not = tk.messagebox.askyesno(title='文件',
                                              message="对方向您传来一个文件\n{}\n是否保存".format(file_name))
         if not save_or_not:
@@ -285,6 +272,30 @@ class LoginWindow:
             self.text_set(strMsg, '文件[' + file_name + ']-已保存' + '\n' + '\n', 'left',
                           'green')
 
+    def recv_image(self, file_name, length):
+        print(file_name, length)
+        self.sk.send(b'#ok#')
+        data = b''
+        count = 0
+        while count < length:
+            data += self.sk.recv(1024)
+            count += 1024
+            if data.find(b'#imagend#') > 0:
+                break
+
+        content = self.aes.aes_decrypt(data.replace(b'#imagend#', b''))
+        # print(content)
+        # .decode('utf-8').strip().replace('\n', '').replace('\r',''))
+
+        with open('./image_cache/temp_{}'.format(file_name), 'wb') as f:
+            f.write(content)
+
+        self.full_file_path = './image_cache/temp_{}'.format(file_name)
+        strMsg = "对方:" + time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()) + '\n'
+
+        self.text_set(strMsg, '', 'left', 'pink')
+        self.image_set('left')
+
     def text_set(self, strMsg, input_, site, color):
         self.start = self.end
         before = int(self.Text_history.index('end').split('.')[0]) - 1
@@ -295,24 +306,48 @@ class LoginWindow:
         tn = 'justify{}'.format(random.randint(0, 99999))
         self.Text_history.tag_add(tn, self.start, self.end)
         self.Text_history.tag_configure(tn, justify=site, foreground=color)
+        self.Text_history.see("end")
 
     def file_open(self):
-        self.open_file_name = filedialog.askopenfilename()
-        with open(file=self.open_file_name, mode='rb') as f:
+        self.full_file_path = filedialog.askopenfilename()
+        with open(file=self.full_file_path, mode='rb') as f:
             self.open_file_data = f.read()
+
+    def send_msg(self, event):
+        input_ = self.get_input()
+        self.aes_encrypt_text = self.aes.aes_encrypt(input_.encode('utf-8'))
+        if input_[0] == '\n':
+            tk.messagebox.showwarning(message='Empty Message')
+            return 'break'
+        strMsg = "我:" + time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()) + '\n'
+
+        self.text_set(strMsg, input_, 'right', '#18bc9c')
+
+        self.Text_input.delete("0.0", ttk.END)
+
+        self.Text_encrypt.delete("0.0", ttk.END)
+        self.Text_encrypt.insert('1.0', 'RSA\n')
+        self.Text_encrypt.insert('2.0', 'N:{}\n'.format(self.rsa_n))
+        self.Text_encrypt.insert('3.0', 'E:{}\n'.format(self.rsa_e))
+
+        self.Text_encrypt.insert('4.0', '\n' * 25)
+        self.Text_encrypt.insert('28.0', 'AES\n')
+        self.Text_encrypt.insert('29.0', 'PLAIN_TEXT:{}\n'.format(input_))
+        self.Text_encrypt.insert('30.0', 'ENCRYPT_TEXT:{}\n'.format(self.aes_encrypt_text))
+
+        self.sk.send(self.aes_encrypt_text)
 
     def send_file(self, event):
         self.file_open()
 
-        index = self.open_file_name[::-1].index('/')
-        file_name = self.open_file_name[::-1][:index][::-1]
+        index = self.full_file_path[::-1].index('/')
+        file_name = self.full_file_path[::-1][:index][::-1]
 
-        format_file_name = "".join("文件[" + file_name+']') +'\n'+'\n'
+        format_file_name = "".join("文件[" + file_name + ']') + '\n' + '\n'
 
         self.aes_encrypt_text = self.aes.aes_encrypt(self.open_file_data)
 
         strMsg = "我:" + time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()) + '\n'
-
 
         self.text_set(strMsg, format_file_name, 'right', '#e74c3c')
 
@@ -328,9 +363,55 @@ class LoginWindow:
         self.Text_encrypt.insert('29.0', 'PLAIN_TEXT:{}\n'.format(self.open_file_data))
         self.Text_encrypt.insert('30.0', 'ENCRYPT_TEXT:{}\n'.format(self.aes_encrypt_text))
 
-        file_magic = b'#coffee#'+file_name.encode('utf-8')+b'#eeffoc#'
+        file_magic = b'#coffee#' + file_name.encode('utf-8') + b'#eeffoc#'
 
-        print(file_magic+self.aes_encrypt_text)
-        self.sk.send(file_magic+self.aes_encrypt_text)
+        print(file_magic + self.aes_encrypt_text)
+        self.sk.send(file_magic + self.aes_encrypt_text)
 
+    def image_set(self, site):
+        self.start = self.end
 
+        before = int(self.Text_history.index('end').split('.')[0]) - 1
+
+        image = Image.open(self.full_file_path)
+        # image.thumbnail((int(image.width*0.5), int(image.height*0.5)))
+        self.image_list.append(ImageTk.PhotoImage(image))
+        height = self.image_list[self.image_index].height() // 100
+        self.Text_history.image_create("end", image=self.image_list[self.image_index])
+        self.Text_history.insert("end", "\n" * height)
+
+        after = int(self.Text_history.index('end').split('.')[0])-1
+
+        self.end = self.start + (after - before)
+        tn = 'justify{}'.format(random.randint(0, 99999))
+        self.Text_history.tag_add(tn, self.start, self.end)
+        self.Text_history.tag_configure(tn, justify=site, )
+
+        self.Text_history.see("end")
+        self.image_index += 1
+
+    def send_image(self, event):
+        self.file_open()
+
+        strMsg = "我:" + time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()) + '\n'
+        self.text_set(strMsg, '', 'right', '#18bc9c')
+
+        self.image_set("right")
+
+        index = self.full_file_path[::-1].index('/')
+        file_name = self.full_file_path[::-1][:index][::-1]
+
+        self.aes_encrypt_text = self.aes.aes_encrypt(self.open_file_data)
+
+        file_magic = b'#deadbeef#' + file_name.encode('utf-8') + b'#beefdead#'
+
+        length = len(self.aes_encrypt_text)
+        self.sk.send(file_magic+length.to_bytes(16,'little',signed=False))
+
+        while 1:
+            if self.sk.recv(1024) == b'#ok#':
+                print('ok')
+                break
+
+        print(self.aes_encrypt_text)
+        self.sk.sendall(self.aes_encrypt_text+b'#imagend#')

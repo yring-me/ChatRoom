@@ -135,7 +135,11 @@ class LoginWindow:
             self.Text_encrypt.insert('4.0', '\n' * n)
             self.Text_encrypt.insert('{}.0'.format(n), 'AES\n')
             self.Text_encrypt.insert('{}.0'.format(n + 1), 'PLAIN_TEXT:{}\n'.format(input_))
-            self.Text_encrypt.insert('{}.0'.format(n + 2), 'ENCRYPT_TEXT:{}\n'.format(self.encrypt_input))
+            if len(self.aes_encrypt_text) > 100:
+                self.Text_encrypt.insert('{}.0'.format(n + 5), 'ENCRYPT_TEXT:{}\n'.format(self.aes_encrypt_text[:20]))
+            else:
+                self.Text_encrypt.insert('{}.0'.format(n + 5), 'ENCRYPT_TEXT:{}\n'.format(self.aes_encrypt_text))
+
 
             # button1.place(x=20, y=new_height - 40)
         self.save_width = new_width
@@ -188,9 +192,6 @@ class LoginWindow:
         # print(self.Text_input.get('0.0', ttk.END))
         return self.Text_input.get('0.0', ttk.END)
 
-    # def send_message(self):
-    #     btn_send = ttk.Button
-
     def send_msg(self, event):
         input_ = self.get_input()
         self.encrypt_input = self.aes.aes_encrypt(input_.encode('utf-8'))
@@ -229,8 +230,8 @@ class LoginWindow:
         n = self.rsa.n
         e = self.rsa.e
         rsa_info = '{},'.format(n) + '{}'.format(e)
-
         self.client_socket.send(rsa_info.encode('utf-8'))
+
         encrypt_rand_num = self.client_socket.recv(1024).decode('utf-8').strip().replace('\n', '').replace('\r', '')
         rand_num = self.rsa.rsa_decrypt(int(encrypt_rand_num))
 
@@ -300,8 +301,7 @@ class LoginWindow:
                 break
 
         content = self.aes.aes_decrypt(data.replace(b'#imagend#', b''))
-        # print(content)
-        # .decode('utf-8').strip().replace('\n', '').replace('\r',''))
+
 
         with open('./image_cache/temp_{}'.format(file_name), 'wb') as f:
             f.write(content)
@@ -352,12 +352,18 @@ class LoginWindow:
         if not save_or_not:
             strMsg = "对方:" + time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()) + '\n'
 
-            self.text_set(strMsg, '文件[' + file_name + ']-未保存' + '\n' + '\n', 'left',
-                          '#18bc9c')
-            self.text_set('', '文件[' + file_name + ']-已保存' + '\n' + '\n', 'left', 'red')
+            self.text_set(strMsg, '', 'left','#18bc9c')
+            self.text_set('', '文件[' + file_name + ']-未保存' + '\n' + '\n', 'left', 'red')
 
         if save_or_not:
             save_path = filedialog.asksaveasfilename()
+
+            if save_path == '':
+                strMsg = "对方:" + time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()) + '\n'
+                self.text_set(strMsg, '', 'left', '#18bc9c')
+                self.text_set('', '文件[' + file_name + ']-未保存' + '\n' + '\n', 'left', 'red')
+                return
+
             with open(save_path, 'wb') as f:
                 f.write(content)
             strMsg = "对方:" + time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()) + '\n'
@@ -396,8 +402,6 @@ class LoginWindow:
 
         self.text_set(strMsg, format_file_name, 'right', '#18bc9c')
 
-        self.Text_input.delete("0.0", ttk.END)
-
         self.Text_encrypt.delete("0.0", ttk.END)
         self.Text_encrypt.insert('1.0', 'RSA\n')
         self.Text_encrypt.insert('2.0', 'N:{}\n'.format(self.rsa.n))
@@ -405,8 +409,8 @@ class LoginWindow:
 
         self.Text_encrypt.insert('4.0', '\n' * 25)
         self.Text_encrypt.insert('28.0', 'AES\n')
-        self.Text_encrypt.insert('29.0', 'PLAIN_TEXT:{}\n'.format(self.open_file_data[20:]))
-        self.Text_encrypt.insert('30.0', 'ENCRYPT_TEXT:{}\n'.format(self.aes_encrypt_text[20:]))
+        self.Text_encrypt.insert('29.0', 'PLAIN_TEXT:{}\n'.format(self.open_file_data[:20]))
+        self.Text_encrypt.insert('30.0', 'ENCRYPT_TEXT:{}\n'.format(self.aes_encrypt_text[:20]))
 
         file_magic = b'#coffee#' + file_name.encode('utf-8') + b'#eeffoc#'
 
@@ -444,5 +448,15 @@ class LoginWindow:
                 print('ok')
                 break
 
-        # print(self.aes_encrypt_text)
+        self.Text_encrypt.delete("0.0", ttk.END)
+        self.Text_encrypt.insert('1.0', 'RSA\n')
+        self.Text_encrypt.insert('2.0', 'N:{}\n'.format(self.rsa.n))
+        self.Text_encrypt.insert('3.0', 'E:{}\n'.format(self.rsa.d))
+
+        self.Text_encrypt.insert('4.0', '\n' * 25)
+        self.Text_encrypt.insert('28.0', 'AES\n')
+        self.Text_encrypt.insert('29.0', 'PLAIN_TEXT:{}\n'.format(self.open_file_data[:20]))
+        self.Text_encrypt.insert('30.0', 'ENCRYPT_TEXT:{}\n'.format(self.aes_encrypt_text[:20]))
+
+
         self.client_socket.sendall(self.aes_encrypt_text + b'#imagend#')

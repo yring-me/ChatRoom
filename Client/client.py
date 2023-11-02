@@ -11,9 +11,6 @@ from utils import *
 from tkinter import filedialog
 import os
 
-image = 0
-
-
 class LoginWindow:
     def __init__(self):
         self.full_file_path = None
@@ -130,7 +127,11 @@ class LoginWindow:
             self.Text_encrypt.insert('4.0', '\n' * n)
             self.Text_encrypt.insert('{}.0'.format(n + 3), 'AES\n')
             self.Text_encrypt.insert('{}.0'.format(n + 4), 'PLAIN_TEXT:{}\n'.format(input_))
-            self.Text_encrypt.insert('{}.0'.format(n + 5), 'ENCRYPT_TEXT:{}\n'.format(self.aes_encrypt_text))
+            if len(self.aes_encrypt_text) > 100:
+                self.Text_encrypt.insert('{}.0'.format(n + 5), 'ENCRYPT_TEXT:{}\n'.format(self.aes_encrypt_text[:20]))
+            else:
+                self.Text_encrypt.insert('{}.0'.format(n + 5), 'ENCRYPT_TEXT:{}\n'.format(self.aes_encrypt_text))
+
 
             # button1.place(x=20, y=new_height - 40)
         self.save_width = new_width
@@ -193,8 +194,9 @@ class LoginWindow:
     def rsa_aes(self):
         rsa_info = self.sk.recv(1024).decode('utf-8').strip().replace('\n', '').replace('\r', '').split(',')
         rand_num = number.getPrime(512)
-
         encrypt_rand_num = pow(rand_num, int(rsa_info[1]), int(rsa_info[0]))
+        self.sk.send(str(encrypt_rand_num).encode('utf-8'))
+
         aes_string = str(rand_num).encode('utf-8')
         self.rsa_n = rsa_info[0]
         self.rsa_e = rsa_info[1]
@@ -202,8 +204,6 @@ class LoginWindow:
         aes_key = aes_string[:16]
         aes_iv = aes_string[-16:]
         self.aes = Client_AES(aes_key, aes_iv)
-
-        self.sk.send(str(encrypt_rand_num).encode('utf-8'))
 
     def dh_swap(self):
         client_dh = Client_DH()
@@ -268,11 +268,11 @@ class LoginWindow:
         if not save_or_not:
             strMsg = "对方:" + time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()) + '\n'
 
-            self.text_set(strMsg, '文件[' + file_name + ']-未保存' + '\n' + '\n', 'left',
+            self.text_set(strMsg, '', 'left',
                           '#18bc9c')
-            self.text_set('', '文件[' + file_name + ']-已保存' + '\n' + '\n', 'left', 'red')
+            self.text_set('', '文件[' + file_name + ']-未保存' + '\n' + '\n', 'left', 'red')
 
-        if save_or_not:
+        elif save_or_not:
             save_path = filedialog.asksaveasfilename()
             with open(save_path, 'wb') as f:
                 f.write(content)
@@ -360,8 +360,6 @@ class LoginWindow:
 
         self.text_set(strMsg, format_file_name, 'right', '#18bc9c')
 
-        self.Text_input.delete("0.0", ttk.END)
-
         self.Text_encrypt.delete("0.0", ttk.END)
         self.Text_encrypt.insert('1.0', 'RSA\n')
         self.Text_encrypt.insert('2.0', 'N:{}\n'.format(self.rsa_n))
@@ -369,8 +367,8 @@ class LoginWindow:
 
         self.Text_encrypt.insert('4.0', '\n' * 25)
         self.Text_encrypt.insert('28.0', 'AES\n')
-        self.Text_encrypt.insert('29.0', 'PLAIN_TEXT:{}\n'.format(self.open_file_data[20:]))
-        self.Text_encrypt.insert('30.0', 'ENCRYPT_TEXT:{}\n'.format(self.aes_encrypt_text[20:]))
+        self.Text_encrypt.insert('29.0', 'PLAIN_TEXT:{}\n'.format(self.open_file_data[:20]))
+        self.Text_encrypt.insert('30.0', 'ENCRYPT_TEXT:{}\n'.format(self.aes_encrypt_text[:20]))
 
         file_magic = b'#coffee#' + file_name.encode('utf-8') + b'#eeffoc#'
 
@@ -380,9 +378,7 @@ class LoginWindow:
 
         while 1:
             if self.sk.recv(1024) == b'#ok#':
-                print('ok')
                 break
-
         self.sk.sendall(self.aes_encrypt_text+b'#filend#')
 
     def image_set(self, site):
@@ -430,5 +426,14 @@ class LoginWindow:
                 print('ok')
                 break
 
-        print(self.aes_encrypt_text)
+        self.Text_encrypt.delete("0.0", ttk.END)
+        self.Text_encrypt.insert('1.0', 'RSA\n')
+        self.Text_encrypt.insert('2.0', 'N:{}\n'.format(self.rsa_n))
+        self.Text_encrypt.insert('3.0', 'E:{}\n'.format(self.rsa_e))
+
+        self.Text_encrypt.insert('4.0', '\n' * 25)
+        self.Text_encrypt.insert('28.0', 'AES\n')
+        self.Text_encrypt.insert('29.0', 'PLAIN_TEXT:{}\n'.format(self.open_file_data[:20]))
+        self.Text_encrypt.insert('30.0', 'ENCRYPT_TEXT:{}\n'.format(self.aes_encrypt_text[:20]))
+
         self.sk.sendall(self.aes_encrypt_text + b'#imagend#')
